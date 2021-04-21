@@ -4,10 +4,10 @@
 enum ledmode_t : uint8_t { LED_OFF, LED_ON, LED_1HZ, LED_2HZ, LED_4HZ };
 enum buttonstate_t : uint8_t { BTN_RELEASED, BTN_PRESSED, BTN_CLICK, BTN_LONGCLICK };
 
-const uint8_t LED_PIN = 25; // LED_BUILTIN
+const uint8_t LED_PIN = 13; // LED_BUILTIN
 const bool LED_LEVEL = HIGH;
 
-const uint8_t BTN_PIN = 0;
+const uint8_t BTN_PIN = 17;
 const bool BTN_LEVEL = LOW;
 
 const char WIFI_SSID[] = "******";
@@ -21,7 +21,7 @@ static void setBlink(ledmode_t mode) {
     Serial.println("Error setting LED mode!");
 }
 
-void blinkTask(void *pvParam) {
+void blinkTask(void *pvParam) { 
   const uint32_t LED_PULSE = 25; // 25 ms.
 
   ledmode_t ledmode = LED_OFF;
@@ -43,6 +43,43 @@ void blinkTask(void *pvParam) {
       vTaskDelay(pdMS_TO_TICKS(LED_PULSE));
       digitalWrite(LED_PIN, ! LED_LEVEL);
       vTaskDelay(pdMS_TO_TICKS((ledmode == LED_1HZ ? 1000 : ledmode == LED_2HZ ? 500 : 250) - LED_PULSE));
+    }
+  }
+}
+
+void btnTask(void *pvParam) {
+  const uint32_t CLICK_TIME = 20; // 20 ms
+  const uint32_t LONGCLICK_TIME = 500; // 500 ms
+
+  uint32_t lastPressed = 0;
+  bool lastBtn;
+
+  pinMode(BTN_PIN, INPUT_PULLUP);
+  lastBtn = digitalRead(BTN_PIN) == BTN_LEVEL;
+  while (true) {
+    bool btn = digitalRead(BTN_PIN) == BTN_LEVEL;
+
+    if (btn != lastBtn) {
+      uint32_t time = millis();
+      buttonstate_t state;
+
+      if (btn) {
+        state = BTN_PRESSED;
+        lastPressed = time;
+      }else {
+        if (time - lastPressed >= LONGCLICK_TIME) {
+          state = BTN_LONGCLICK;
+        }else if (time - lastPressed >= CLICK_TIME) {
+          state = BTN_CLICK;
+        }else{
+          state = BTN_RELEASED;
+        }
+        lastPressed = 0;
+      }
+      xQueueSend((QueueHandle_t)queue, &state, portMAX_DELAY);
+      lastBtn = btn; 
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
 }
@@ -118,16 +155,35 @@ void setup() {
 
   if (xTaskCreate(blinkTask, "blink", 1024, NULL, 1, &blink) != pdPASS)
     halt("Error creating blink task!");
-  if (xTaskCreatePinnedToCore(wifiTask, "wifi", 4096, NULL, 1, NULL, 1) != pdPASS)
-    halt("Error creating WiFi task!");
+  
+
   queue = xQueueCreate(32, sizeof(buttonstate_t));
   if (! queue)
     halt("Error creating queue!");
   pinMode(BTN_PIN, INPUT_PULLUP);
+  setBlink(LED_1HZ);
+
+//#define BTN_TASK (1)
+#if BTN_TASK
+  Serial.println("btnTask Option");
+  if (xTaskCreate(btnTask, "btn", 1024, (void*)queue, 1, NULL) != pdPASS)
+    halt("Error creating button task!");
+#else
+  Serial.println("interruptBtn Option");
   attachInterrupt(digitalPinToInterrupt(BTN_PIN), btnISR, CHANGE);
+#endif
+/*
+  Serial.println("interruptBtn Option");
+  if (xTaskCreatePinnedToCore(wifiTask, "wifi", 4096, NULL, 1, NULL, 1) != pdPASS)
+    halt("Error creating WiFi task!");
+  attachInterrupt(digitalPinToInterrupt(BTN_PIN), btnISR, CHANGE);
+*/
+  Serial.flush();
 }
 
 void loop() {
+
+
   buttonstate_t state;
 
   if (xQueueReceive(queue, &state, portMAX_DELAY) == pdTRUE) {
@@ -147,4 +203,5 @@ void loop() {
         break;
     }
   }
+  
 }
