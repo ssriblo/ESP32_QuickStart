@@ -4,7 +4,7 @@
 enum ledmode_t : uint8_t { LED_OFF, LED_ON, LED_1HZ, LED_2HZ, LED_4HZ };
 enum buttonstate_t : uint8_t { BTN_RELEASED, BTN_PRESSED, BTN_CLICK, BTN_LONGCLICK };
 
-const uint8_t LED_PIN = 13; // LED_BUILTIN
+const uint8_t LED_PIN = 16; // LED_BUILTIN
 const bool LED_LEVEL = HIGH;
 
 const uint8_t BTN_PIN = 17;
